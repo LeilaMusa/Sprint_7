@@ -2,7 +2,6 @@ package api.tests;
 
 import api.CourierApi;
 import api.models.Courier;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.qameta.allure.Step;
 import io.qameta.allure.junit4.DisplayName;
 import io.restassured.RestAssured;
@@ -11,25 +10,21 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.IOException;
-
-import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.*;
 import static org.hamcrest.Matchers.*;
 
 public class CourierTest {
     private Courier courier;
     private String courierId;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Before
     @Step("Настройка тестовых данных")
-    public void setUp() throws IOException {
+    public void setUp() {
         // Устанавливаем базовый URI
         RestAssured.baseURI = "https://qa-scooter.praktikum-services.ru";
 
-        // Чтение JSON-файла для создания курьера
-        courier = objectMapper.readValue(new File("src/test/resources/create_courier.json"), Courier.class);
+        // Создание курьера программно
+        courier = new Courier("default_login", "default_password", "default_firstName");
     }
 
     @After
@@ -40,24 +35,119 @@ public class CourierTest {
         }
     }
 
-    @Step("Удаление курьера с ID: {courierId}")
-    private void deleteCourier(String courierId) {
-        CourierApi.deleteCourier(courierId);
-    }
-
+    // Тесты
     @Test
     @DisplayName("Создание курьера")
     @Step("Тест: Создание курьера")
-    public void testCreateCourier() throws IOException {
+    public void testCreateCourier() {
         // Генерация уникального логина
         String uniqueLogin = generateUniqueLogin();
         courier.setLogin(uniqueLogin);
 
         // Отправка запроса на создание курьера
-        Response response = createCourierRequest(courier);
+        Response response = CourierApi.createCourier(courier);
 
         // Проверка успешного создания курьера
         verifyCourierCreation(response);
+
+        // Логинимся, чтобы получить ID курьера
+        Response loginResponse = CourierApi.loginCourier(courier);
+
+        // Сохраняем ID курьера для последующего удаления
+        courierId = loginResponse.then().extract().path("id").toString();
+    }
+
+    @Test
+    @DisplayName("Нельзя создать двух одинаковых курьеров")
+    @Step("Тест: Нельзя создать двух одинаковых курьеров")
+    public void testCreateDuplicateCourier() {
+        // Создание курьера
+        CourierApi.createCourier(courier);
+
+        // Попытка создать дубликат курьера
+        Response response = CourierApi.createCourier(courier);
+
+        // Проверка ошибки при создании дубликата
+        verifyDuplicateCourierError(response);
+    }
+
+    @Test
+    @DisplayName("Создание курьера без логина")
+    @Step("Тест: Создание курьера без логина")
+    public void testCreateCourierWithoutLogin() {
+        // Создание курьера без логина
+        Courier invalidCourier = new Courier("", courier.getPassword(), courier.getFirstName());
+
+        // Отправка запроса на создание курьера без логина
+        Response response = CourierApi.createCourier(invalidCourier);
+
+        // Проверка ошибки при отсутствии логина
+        verifyRequiredFieldsError(response);
+    }
+
+    @Test
+    @DisplayName("Создание курьера без пароля")
+    @Step("Тест: Создание курьера без пароля")
+    public void testCreateCourierWithoutPassword() {
+        // Создание курьера без пароля
+        Courier invalidCourier = new Courier(courier.getLogin(), "", courier.getFirstName());
+
+        // Отправка запроса на создание курьера без пароля
+        Response response = CourierApi.createCourier(invalidCourier);
+
+        // Проверка ошибки при отсутствии пароля
+        verifyRequiredFieldsError(response);
+    }
+
+    @Test
+    @DisplayName("Логин курьера")
+    @Step("Тест: Логин курьера")
+    public void testLoginCourier() {
+        // Создание курьера перед логином
+        CourierApi.createCourier(courier);
+
+        // Логин курьера
+        Response response = CourierApi.loginCourier(courier);
+
+        // Проверка успешного логина
+        verifySuccessfulLogin(response);
+
+        // Сохраняем ID курьера для последующего удаления
+        courierId = response.then().extract().path("id").toString();
+    }
+
+    @Test
+    @DisplayName("Логин курьера с неверным логином")
+    @Step("Тест: Логин курьера с неверным логином")
+    public void testLoginCourierWithInvalidLogin() {
+        // Логин с неверным логином
+        Courier invalidCourier = new Courier("invalid", courier.getPassword(), "");
+
+        // Отправка запроса на логин с неверным логином
+        Response response = CourierApi.loginCourier(invalidCourier);
+
+        // Проверка ошибки при неверном логине
+        verifyInvalidLoginError(response);
+    }
+
+    @Test
+    @DisplayName("Логин курьера с неверным паролем")
+    @Step("Тест: Логин курьера с неверным паролем")
+    public void testLoginCourierWithInvalidPassword() {
+        // Логин с неверным паролем
+        Courier invalidCourier = new Courier(courier.getLogin(), "invalid", "");
+
+        // Отправка запроса на логин с неверным паролем
+        Response response = CourierApi.loginCourier(invalidCourier);
+
+        // Проверка ошибки при неверном пароле
+        verifyInvalidLoginError(response);
+    }
+
+    // Вспомогательные методы
+    @Step("Удаление курьера с ID: {courierId}")
+    private void deleteCourier(String courierId) {
+        CourierApi.deleteCourier(courierId);
     }
 
     @Step("Генерация уникального логина")
@@ -65,191 +155,43 @@ public class CourierTest {
         return "courier_" + System.currentTimeMillis();
     }
 
-    @Step("Отправка запроса на создание курьера")
-    private Response createCourierRequest(Courier courier) {
-        return given()
-                .log().all()
-                .header("Content-type", "application/json")
-                .body(courier)
-                .when()
-                .post("/api/v1/courier");
-    }
-
     @Step("Проверка успешного создания курьера")
     private void verifyCourierCreation(Response response) {
         response.then().log().all()
-                .assertThat().statusCode(201)
+                .assertThat().statusCode(SC_CREATED)
                 .and()
                 .body("ok", equalTo(true));
-    }
-
-    @Test
-    @DisplayName("Нельзя создать двух одинаковых курьеров")
-    @Step("Тест: Нельзя создать двух одинаковых курьеров")
-    public void testCreateDuplicateCourier() throws IOException {
-        // Создание курьера
-        createCourier(courier);
-
-        // Попытка создать дубликат курьера
-        Response response = createCourierRequest(courier);
-
-        // Проверка ошибки при создании дубликата
-        verifyDuplicateCourierError(response);
-    }
-
-    @Step("Создание курьера")
-    private void createCourier(Courier courier) {
-        CourierApi.createCourier(courier);
     }
 
     @Step("Проверка ошибки при создании дубликата курьера")
     private void verifyDuplicateCourierError(Response response) {
         response.then().log().all()
-                .assertThat().statusCode(409)
+                .assertThat().statusCode(SC_CONFLICT)
                 .and()
                 .body("message", equalTo("Этот логин уже используется. Попробуйте другой."));
-    }
-
-    @Test
-    @DisplayName("Создание курьера без обязательных полей")
-    @Step("Тест: Создание курьера без обязательных полей")
-    public void testCreateCourierWithoutRequiredFields() throws IOException {
-        // Создание курьера без обязательных полей
-        Courier invalidCourier = createInvalidCourier();
-
-        // Отправка запроса на создание курьера без обязательных полей
-        Response response = createCourierRequest(invalidCourier);
-
-        // Проверка ошибки при отсутствии обязательных полей
-        verifyRequiredFieldsError(response);
-    }
-
-    @Step("Создание курьера без обязательных полей")
-    private Courier createInvalidCourier() {
-        return new Courier("", "", "");
     }
 
     @Step("Проверка ошибки при отсутствии обязательных полей")
     private void verifyRequiredFieldsError(Response response) {
         response.then().log().all()
-                .assertThat().statusCode(400)
+                .assertThat().statusCode(SC_BAD_REQUEST)
                 .and()
                 .body("message", equalTo("Недостаточно данных для создания учетной записи"));
-    }
-
-    @Test
-    @DisplayName("Логин курьера")
-    @Step("Тест: Логин курьера")
-    public void testLoginCourier() throws IOException {
-        // Создание курьера перед логином
-        createCourier(courier);
-
-        // Логин курьера
-        Response response = loginCourierRequest(courier);
-
-        // Проверка успешного логина
-        verifySuccessfulLogin(response);
-
-        // Сохраняем ID курьера для последующего удаления
-        saveCourierId(response);
-    }
-
-    @Step("Отправка запроса на логин курьера")
-    private Response loginCourierRequest(Courier courier) {
-        return given()
-                .log().all()
-                .header("Content-type", "application/json")
-                .body(courier)
-                .when()
-                .post("/api/v1/courier/login");
     }
 
     @Step("Проверка успешного логина")
     private void verifySuccessfulLogin(Response response) {
         response.then().log().all()
-                .assertThat().statusCode(200)
+                .assertThat().statusCode(SC_OK)
                 .and()
                 .body("id", notNullValue());
-    }
-
-    @Step("Сохранение ID курьера")
-    private void saveCourierId(Response response) {
-        courierId = response.path("id").toString();
-    }
-
-    @Test
-    @DisplayName("Логин курьера с неверными данными")
-    @Step("Тест: Логин курьера с неверными данными")
-    public void testLoginCourierWithInvalidData() throws IOException {
-        // Логин с неверными данными
-        Courier invalidCourier = createInvalidLoginCourier();
-
-        // Отправка запроса на логин с неверными данными
-        Response response = loginCourierRequest(invalidCourier);
-
-        // Проверка ошибки при неверных данных
-        verifyInvalidLoginError(response);
-    }
-
-    @Step("Создание курьера с неверными данными для логина")
-    private Courier createInvalidLoginCourier() {
-        return new Courier("invalid", "invalid", "");
     }
 
     @Step("Проверка ошибки при неверных данных")
     private void verifyInvalidLoginError(Response response) {
         response.then().log().all()
-                .assertThat().statusCode(404)
+                .assertThat().statusCode(SC_NOT_FOUND)
                 .and()
                 .body("message", equalTo("Учетная запись не найдена"));
-    }
-
-    @Test
-    @DisplayName("Логин курьера без обязательных полей")
-    @Step("Тест: Логин курьера без обязательных полей")
-    public void testLoginCourierWithoutRequiredFields() throws IOException {
-        // Логин без обязательных полей
-        Courier invalidCourier = createInvalidCourier();
-
-        // Отправка запроса на логин без обязательных полей
-        Response response = loginCourierRequest(invalidCourier);
-
-        // Проверка ошибки при отсутствии обязательных полей
-        verifyRequiredFieldsLoginError(response);
-    }
-
-    @Step("Проверка ошибки при отсутствии обязательных полей для логина")
-    private void verifyRequiredFieldsLoginError(Response response) {
-        response.then().log().all()
-                .assertThat().statusCode(400)
-                .and()
-                .body("message", equalTo("Недостаточно данных для входа"));
-    }
-
-    @Test
-    @DisplayName("Логин курьера с отсутствующим паролем")
-    @Step("Тест: Логин курьера с отсутствующим паролем")
-    public void testLoginCourierWithoutPassword() throws IOException {
-        // Логин без пароля
-        Courier invalidCourier = createCourierWithoutPassword();
-
-        // Отправка запроса на логин без пароля
-        Response response = loginCourierRequest(invalidCourier);
-
-        // Проверка ошибки при отсутствии пароля
-        verifyMissingPasswordError(response);
-    }
-
-    @Step("Создание курьера без пароля")
-    private Courier createCourierWithoutPassword() {
-        return new Courier(courier.getLogin(), "", "");
-    }
-
-    @Step("Проверка ошибки при отсутствии пароля")
-    private void verifyMissingPasswordError(Response response) {
-        response.then().log().all()
-                .assertThat().statusCode(400)
-                .and()
-                .body("message", equalTo("Недостаточно данных для входа"));
     }
 }

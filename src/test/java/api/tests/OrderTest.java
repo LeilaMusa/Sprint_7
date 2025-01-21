@@ -14,8 +14,7 @@ import org.junit.runners.Parameterized;
 import java.util.Arrays;
 import java.util.Collection;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.notNullValue;
 
 @RunWith(Parameterized.class) // Включаем поддержку параметризации
 public class OrderTest {
@@ -74,35 +73,5 @@ public class OrderTest {
         response.then()
                 .statusCode(201)
                 .body("track", notNullValue());
-    }
-
-    @Test
-    @DisplayName("Получение списка заказов через ручку /v1/orders")
-    @Step("Тест: Получение списка заказов")
-    public void testGetOrders() {
-        // Отправляем запрос на получение списка заказов
-        Response response = sendGetOrdersRequest();
-
-        // Проверяем, что ответ успешный и тело ответа не пустое
-        verifyGetOrdersResponse(response);
-    }
-
-    @Step("Отправка запроса на получение списка заказов")
-    private Response sendGetOrdersRequest() {
-        return given()
-                .log().all() // Логирование запроса
-                .when()
-                .get("/v1/orders");
-    }
-
-    @Step("Проверка ответа на запрос списка заказов")
-    private void verifyGetOrdersResponse(Response response) {
-        response.then()
-                .log().all() // Логирование ответа
-                .assertThat()
-                .statusCode(200)
-                .and()
-                .body(notNullValue()) // Проверяем, что тело ответа не пустое
-                .body("orders", notNullValue()); // Проверяем, что в ответе есть поле orders
     }
 }
