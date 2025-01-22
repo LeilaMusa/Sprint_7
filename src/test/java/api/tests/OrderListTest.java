@@ -1,5 +1,6 @@
 package api.tests;
 
+import api.OrderApi;
 import io.qameta.allure.Step;
 import io.qameta.allure.junit4.DisplayName;
 import io.restassured.RestAssured;
@@ -7,7 +8,6 @@ import io.restassured.response.Response;
 import org.junit.Before;
 import org.junit.Test;
 
-import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.notNullValue;
 
 public class OrderListTest {
@@ -24,18 +24,10 @@ public class OrderListTest {
     @Step("Тест: Получение списка заказов")
     public void testGetOrders() {
         // Отправляем запрос на получение списка заказов
-        Response response = sendGetOrdersRequest();
+        Response response = OrderApi.getOrders();
 
         // Проверяем, что ответ успешный и тело ответа не пустое
         verifyGetOrdersResponse(response);
-    }
-
-    @Step("Отправка запроса на получение списка заказов")
-    private Response sendGetOrdersRequest() {
-        return given()
-                .log().all() // Логирование запроса
-                .when()
-                .get("/v1/orders");
     }
 
     @Step("Проверка ответа на запрос списка заказов")
